@@ -4,11 +4,11 @@ const db = require('./pg');
 const dataController = {};
 
 /**
- * searchCache - Middleware that searches cache first for processed results. 
+ * searchCache - Middleware that searches cache first for processed results.
  *               If in cache, sticks results on response.locals.
- * @param {*} request 
- * @param {*} response 
- * @param {*} next 
+ * @param {*} request
+ * @param {*} response
+ * @param {*} next
  */
 dataController.searchCache = (request, response, next) => {
   // Extract the query string from the request object.
@@ -29,7 +29,7 @@ dataController.searchCache = (request, response, next) => {
     // Handle error.
     if (err) console.log(err);
     console.log(result);
-    
+
     // If results are not null, we have a cached result.
     if (result.rows.length) {
       // Stick it on res.locals.
@@ -43,46 +43,42 @@ dataController.searchCache = (request, response, next) => {
     }
 
     // Pass control.
-    return next();   
+    return next();
   })
 }
 
 /**
  * processSentiment - Searches DB for instances of string and processes
  *                    sentiment.  Sticks result on res.locals.
- * @param {*} request 
- * @param {*} response 
- * @param {*} next 
+ * @param {*} request
+ * @param {*} response
+ * @param {*} next
  */
+
+ // CHANGE THIS SHIT, PARALLEL QUERIES, promise.all
 dataController.processSentiment = (request, response, next) => {
   // Pass control if response.locals.result exists.
   if (response.locals.result) return next();
   console.log(`processSentiment middleware function activated`)
   // Init new Sentiment object.
   const sentiment = new Sentiment();
-
-  // Build query.
-  const procesSentimentQuery = {
-    name: 'processsentiment-query',
-    text: 'SELECT * FROM mastertable WHERE text ILIKE $1;',
-    values: [`%${request.body.queryString}%`],
+  let processSentimentQuery = {
+    text: `SELECT time, text FROM mastertable where document @@ plainto_tsquery($1);`,
+    values: [request.body.queryString],
   }
 
-  // Execute query.
-  db.query(procesSentimentQuery, (err, result) => {
-    // Handle error.
-    if (err) {
-      return next(err)
-    } else {
+  db.query(processSentimentQuery, (err, result) => {
+    
+    console.log('Query executed');
+    if (err) console.log(err);
+    else {
       console.log(`inside of processSentimentQuery`)
       const sentimentArray = result.rows.map(row => {
         // Put the date and sentiment score into a new array.
         return [row.time, sentiment.analyze(row.text).score];
       });
-  
-      // Group by month and stick it on results.
       response.locals.result = groupByMonth(sentimentArray);
-  
+      // console.log(response.locals.result)
       // Set the toCache property of res.locals to true.
       response.locals.toCache = true;
 
@@ -90,13 +86,14 @@ dataController.processSentiment = (request, response, next) => {
       return next();
     }
   })
+
 }
 
 /**
  * updateCache - Sticks results in cache if did not exist previously.
- * @param {*} request 
- * @param {*} response 
- * @param {*} next 
+ * @param {*} request
+ * @param {*} response
+ * @param {*} next
  */
 dataController.updateCache = (request, response, next) => {
   // Pass control if locals.toCache is true.
@@ -124,7 +121,7 @@ dataController.updateCache = (request, response, next) => {
 /**
  * groupByMonth - Takes array of arrays in which first element is seconds
  *                since epoch and groups by (averages) second element.
- * @param {*} array 
+ * @param {*} array
  */
 const groupByMonth = (array) => {
   // month number to month name object.
@@ -162,7 +159,7 @@ const groupByMonth = (array) => {
     if (!(year in groupedByObj))
       groupedByObj[year] = {};
 
-    // If month not in year, init new object literal with sentiment/frequency keys. 
+    // If month not in year, init new object literal with sentiment/frequency keys.
     if (!(month in groupedByObj[year]))
       groupedByObj[year][month] = { ave_sentiment: 0, frequency: 0 };
 
